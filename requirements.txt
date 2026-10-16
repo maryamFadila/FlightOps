@@ -1,0 +1,4 @@
+requests==2.31.0
+mysql-connector-python==8.4.0
+prometheus-client==0.20.0
+urllib3==2.1.0

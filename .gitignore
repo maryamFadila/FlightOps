@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite
+*.db
+
+# Docker volumes
+mysql_data/
+grafana_data/
+
+# Environment files (if any)
+.env
