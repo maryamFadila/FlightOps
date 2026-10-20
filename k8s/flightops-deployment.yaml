@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: flightops-sa
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: flightops-readonly-role
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: flightops-rolebinding
+subjects:
+  - kind: ServiceAccount
+    name: flightops-sa
+    namespace: default
+roleRef:
+  kind: Role
+  name: flightops-readonly-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flightops-ingestion
+  labels:
+    app: flightops-ingestion
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flightops-ingestion
+  template:
+    metadata:
+      labels:
+        app: flightops-ingestion
+    spec:
+      serviceAccountName: flightops-sa
+      dnsConfig:
+        nameservers:
+          - 8.8.8.8
+          - 1.1.1.1
+      containers:
+        - name: ingestion
+          image: flightops-ingestion:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+              name: metrics
+          envFrom:
+            - configMapRef:
+                name: flightops-config
+            - secretRef:
+                name: flightops-secret
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "300m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flightops-metrics-service
+  labels:
+    app: flightops-ingestion
+spec:
+  selector:
+    app: flightops-ingestion
+  ports:
+    - name: metrics
+      protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP

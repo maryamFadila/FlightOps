@@ -1,3 +1,4 @@
+
 """
 FlightOps - Cloud-Native Data Ingestion Service (MySQL Version)
 ==============================================================
@@ -24,7 +25,6 @@ from prometheus_client import start_http_server, Counter, Gauge, Histogram
 OPENSKY_URL = os.getenv("OPENSKY_API_URL", "https://opensky-network.org/api/states/all")
 WEATHER_URL = os.getenv("OPENMETEO_API_URL", "https://api.open-meteo.com/v1/forecast")
 
-# MySQL Configuration variables matching docker-compose
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = int(os.getenv("DB_PORT", "3306"))
 DB_USER = os.getenv("DB_USER", "root")
@@ -35,10 +35,10 @@ DEFAULT_INTERVAL = int(os.getenv("FETCH_INTERVAL_SECONDS", "60"))
 METRICS_PORT = int(os.getenv("METRICS_PORT", "8000"))
 
 DEFAULT_BBOX = {
-    "lamin": float(os.getenv("BBOX_LAMIN", "20.0")),    # South
-    "lamax": float(os.getenv("BBOX_LAMAX", "35.0")),    # North
-    "lomin": float(os.getenv("BBOX_LOMIN", "20.0")),    # West
-    "lomax": float(os.getenv("BBOX_LOMAX", "40.0")),    # East
+    "lamin": float(os.getenv("BBOX_LAMIN", "20.0")),
+    "lamax": float(os.getenv("BBOX_LAMAX", "35.0")),
+    "lomin": float(os.getenv("BBOX_LOMIN", "20.0")),
+    "lomax": float(os.getenv("BBOX_LOMAX", "40.0")),
 }
 
 # -------------------------------------------------------------------
@@ -66,11 +66,7 @@ signal.signal(signal.SIGINT, handle_shutdown_signal)
 # -------------------------------------------------------------------
 
 def fetch_flights(bbox=None):
-    """
-    Fetches active flights and their coordinates from the OpenSky Network API.
-    """
     params = bbox if bbox else {}
-
     try:
         response = requests.get(OPENSKY_URL, params=params, timeout=15)
         response.raise_for_status()
@@ -116,10 +112,6 @@ def fetch_flights(bbox=None):
 # -------------------------------------------------------------------
 
 def fetch_weather(lat, lon, retries=3, backoff=1.5):
-    """
-    Fetches high-altitude atmospheric weather (250hPa pressure level ~ 10.5 km altitude)
-    using Open-Meteo API with exponential backoff retry logic.
-    """
     last_error = None
     for attempt in range(1, retries + 1):
         try:
@@ -149,10 +141,6 @@ def fetch_weather(lat, lon, retries=3, backoff=1.5):
 
 
 def get_weather_cached(lat, lon, cache):
-    """
-    Applies 0.5-degree spatial grid batching (~50km) to cache weather requests
-    and prevent API rate-limiting.
-    """
     key = (round(lat * 2) / 2, round(lon * 2) / 2)
     if key not in cache:
         try:
@@ -165,16 +153,11 @@ def get_weather_cached(lat, lon, cache):
 
 
 # -------------------------------------------------------------------
-# 3) MySQL Persistence Layer
+# 3) MySQL Persistence Layer (UPSERT Enabled)
 # -------------------------------------------------------------------
 
 def get_db_connection():
-    """
-    Establishes and returns a connection to the MySQL database,
-    creating the database and required tables if they don't exist.
-    """
     try:
-        # Connect first without database name to ensure DB exists
         conn = mysql.connector.connect(
             host=DB_HOST,
             port=DB_PORT,
@@ -186,7 +169,6 @@ def get_db_connection():
         cursor.close()
         conn.close()
 
-        # Connect to the specific database
         conn = mysql.connector.connect(
             host=DB_HOST,
             port=DB_PORT,
@@ -198,7 +180,7 @@ def get_db_connection():
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS flight_weather (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                icao24 VARCHAR(255),
+                icao24 VARCHAR(255) UNIQUE,
                 callsign VARCHAR(255),
                 origin_country VARCHAR(255),
                 latitude FLOAT,
@@ -230,12 +212,26 @@ def save_records(conn, records):
             altitude, velocity, heading, temperature, windspeed,
             winddirection, weathercode, fetched_at, inserted_at
         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            callsign = VALUES(callsign),
+            origin_country = VALUES(origin_country),
+            latitude = VALUES(latitude),
+            longitude = VALUES(longitude),
+            altitude = VALUES(altitude),
+            velocity = VALUES(velocity),
+            heading = VALUES(heading),
+            temperature = VALUES(temperature),
+            windspeed = VALUES(windspeed),
+            winddirection = VALUES(winddirection),
+            weathercode = VALUES(weathercode),
+            fetched_at = VALUES(fetched_at),
+            inserted_at = VALUES(inserted_at)
     """
     try:
         cursor.executemany(query, records)
         conn.commit()
     except Error as e:
-        print(f"[ERROR] Failed to insert records into MySQL: {e}")
+        print(f"[ERROR] Failed to insert/update records into MySQL: {e}")
         conn.rollback()
     finally:
         cursor.close()

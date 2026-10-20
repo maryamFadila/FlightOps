@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flightops-config
+data:
+  OPENSKY_API_URL: "https://opensky-network.org/api/states/all"
+  OPENMETEO_API_URL: "https://api.open-meteo.com/v1/forecast"
+  DB_HOST: "mysql-service"
+  DB_PORT: "3306"
+  DB_NAME: "flightops"
+  FETCH_INTERVAL_SECONDS: "60"
+  METRICS_PORT: "8000"
+  BBOX_LAMIN: "20.0"
+  BBOX_LAMAX: "35.0"
+  BBOX_LOMIN: "20.0"
+  BBOX_LOMAX: "40.0"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: flightops-secret
+type: Opaque
+stringData:
+  DB_USER: "root"
+  DB_PASSWORD: "rootpass"
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mysql-pv
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/mnt/data/mysql"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-pvc
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
